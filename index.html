@@ -93,6 +93,7 @@
 
     let scanner = null;
     let escaneando = false;
+    let procesandoQR = false;
 
     let idEinaActual = "";
     let modeloActual = "";
@@ -189,17 +190,25 @@
     }
 
     function iniciarPantallaEscaner() {
+      idEinaActual = "";
+      modeloActual = "";
+      procesandoQR = false;
+
       document.getElementById("card").innerHTML = `
         <div class="title">ESCÁNER CONTROL MAQ</div>
         <div id="reader"></div>
         <div class="small">Escanea una herramienta.</div>
       `;
 
-      iniciarCamara();
+      setTimeout(function() {
+        iniciarCamara();
+      }, 300);
     }
 
     function iniciarCamara() {
-      if (escaneando) return;
+      if (escaneando || procesandoQR) return;
+
+      limpiarScannerSimple();
 
       scanner = new Html5Qrcode("reader");
       escaneando = true;
@@ -218,27 +227,75 @@
         }
       ).catch(function(err) {
         escaneando = false;
-        mostrarErrorTexto("No se ha podido abrir la cámara", err && err.message ? err.message : err);
+        scanner = null;
+
+        mostrarErrorTexto(
+          "No se ha podido abrir la cámara",
+          err && err.message ? err.message : err
+        );
       });
     }
 
     function qrDetectado(textoQR) {
-      if (!escaneando) return;
+      if (!escaneando || procesandoQR) return;
 
+      procesandoQR = true;
       escaneando = false;
 
-      scanner.stop().then(function() {
-        const idEina = extraerIdEina(textoQR);
+      const idEina = extraerIdEina(textoQR);
 
+      pararScanner(function() {
         if (!idEina) {
           mostrarErrorTexto("QR no válido", "No se ha encontrado el código de herramienta.");
           return;
         }
 
         procesarHerramienta(idEina);
-      }).catch(function(err) {
-        mostrarErrorTexto("Error deteniendo el escáner", err && err.message ? err.message : err);
       });
+    }
+
+    function pararScanner(callback) {
+      if (!scanner) {
+        limpiarScannerSimple();
+        if (callback) callback();
+        return;
+      }
+
+      try {
+        scanner.stop()
+          .then(function() {
+            try {
+              scanner.clear();
+            } catch (e) {
+              // Ignorar error de limpieza.
+            }
+
+            scanner = null;
+            escaneando = false;
+
+            if (callback) callback();
+          })
+          .catch(function(err) {
+            limpiarScannerSimple();
+            if (callback) callback();
+          });
+      } catch (e) {
+        limpiarScannerSimple();
+        if (callback) callback();
+      }
+    }
+
+    function limpiarScannerSimple() {
+      try {
+        if (scanner) {
+          scanner.clear();
+        }
+      } catch (e) {
+        // Ignorar errores de limpieza.
+      }
+
+      scanner = null;
+      escaneando = false;
     }
 
     function extraerIdEina(texto) {
@@ -290,15 +347,17 @@
     function mostrarConfirmacion() {
       document.getElementById("card").innerHTML = `
         <div class="title">Herramienta detectada</div>
-        <div class="tool">${modeloActual}</div>
+        <div class="tool">${escaparHtml(modeloActual)}</div>
         <button id="btnConfirmar" onclick="confirmarRegistro()">CONFIRMAR</button>
       `;
     }
 
     function confirmarRegistro() {
       const btn = document.getElementById("btnConfirmar");
-      btn.disabled = true;
-      btn.textContent = "REGISTRANDO...";
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = "REGISTRANDO...";
+      }
 
       const idEnc = localStorage.getItem(STORAGE_ENC_KEY);
       const tokenDispositivo = asegurarTokenDispositivo();
@@ -328,21 +387,22 @@
     function mostrarRegistrado() {
       document.getElementById("card").innerHTML = `
         <div class="title">✓ REGISTRADO</div>
-        <div class="tool">${modeloActual}</div>
+        <div class="tool">${escaparHtml(modeloActual)}</div>
         <div class="small">Preparando siguiente escaneo...</div>
       `;
 
       setTimeout(function() {
-        idEinaActual = "";
-        modeloActual = "";
+        limpiarScannerSimple();
         iniciarPantallaEscaner();
-      }, 900);
+      }, 1200);
     }
 
     function mostrarErrorTexto(titulo, detalle) {
+      limpiarScannerSimple();
+
       document.getElementById("card").innerHTML = `
-        <div class="title error">✗ ${titulo}</div>
-        <div class="small">${detalle || ""}</div>
+        <div class="title error">✗ ${escaparHtml(titulo)}</div>
+        <div class="small">${escaparHtml(detalle || "")}</div>
         <button onclick="iniciarPantallaEscaner()">ESCANEAR OTRA VEZ</button>
       `;
     }
@@ -372,11 +432,24 @@
       script.onerror = function() {
         delete window[callbackName];
         script.remove();
-        mostrarErrorTexto("Error conectando con CONTROL MAQ", "No se ha podido contactar con Apps Script.");
+
+        mostrarErrorTexto(
+          "Error conectando con CONTROL MAQ",
+          "No se ha podido contactar con Apps Script."
+        );
       };
 
       script.src = API_URL + "?" + query;
       document.body.appendChild(script);
+    }
+
+    function escaparHtml(valor) {
+      return String(valor || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
     }
   </script>
 </body>
