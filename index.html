@@ -13,35 +13,35 @@
       font-family: Arial, sans-serif;
       text-align: center;
       background: #f5f5f5;
-      padding: 12px;
+      padding: 16px;
       margin: 0;
     }
 
     .card {
       background: white;
-      margin: 12px auto 0 auto;
-      padding: 18px 14px;
-      max-width: 430px;
+      margin: 24px auto 0 auto;
+      padding: 24px 18px;
+      max-width: 420px;
       border-radius: 18px;
       box-shadow: 0 4px 18px rgba(0,0,0,0.15);
     }
 
     .title {
-      font-size: 25px;
+      font-size: 26px;
       font-weight: bold;
-      margin-bottom: 14px;
+      margin-bottom: 18px;
     }
 
     .tool {
       font-size: 24px;
       font-weight: bold;
-      margin: 16px 0 22px 0;
+      margin: 20px 0 26px 0;
     }
 
     .small {
       font-size: 15px;
       color: #666;
-      margin-top: 10px;
+      margin-top: 12px;
     }
 
     button {
@@ -74,22 +74,14 @@
     #reader {
       width: 100%;
       max-width: 360px;
-      margin: 0 auto 14px auto;
-    }
-
-    #panel {
-      margin-top: 10px;
+      margin: 0 auto;
     }
   </style>
 </head>
 
 <body>
-  <div class="card">
-    <div class="title">ESCÁNER CONTROL MAQ</div>
-    <div id="reader"></div>
-    <div id="panel">
-      <div class="small">Cargando...</div>
-    </div>
+  <div class="card" id="card">
+    <div class="title">Cargando...</div>
   </div>
 
   <script>
@@ -98,11 +90,12 @@
     const STORAGE_ENC_KEY = "id_encarregat_eines_qr";
     const STORAGE_TOKEN_KEY = "token_dispositiu_eines_qr";
     const STORAGE_ALIAS_KEY = "alias_dispositiu_eines_qr";
+    const STORAGE_LAST_ID_KEY = "ultimo_id_eina_control_maq";
+    const STORAGE_LAST_TS_KEY = "ultimo_ts_control_maq";
 
     let scanner = null;
-    let scannerActivo = false;
-    let lecturaPausada = false;
-    let procesando = false;
+    let escaneando = false;
+    let procesandoQR = false;
 
     let idEinaActual = "";
     let modeloActual = "";
@@ -119,9 +112,9 @@
       }
 
       if (einaInicial) {
-        procesarHerramienta(einaInicial, false);
+        procesarHerramienta(einaInicial);
       } else {
-        iniciarEscanerContinuo();
+        iniciarPantallaEscaner();
       }
     };
 
@@ -129,6 +122,10 @@
       const params = new URLSearchParams(window.location.search);
       const valor = params.get("eina") || params.get("id") || "";
       return limpiarId(valor);
+    }
+
+    function urlEscanerLimpia() {
+      return window.location.origin + window.location.pathname + "?scan=" + Date.now();
     }
 
     function asegurarTokenDispositivo() {
@@ -153,58 +150,72 @@
     }
 
     function mostrarSeleccionEncargado(einaInicial) {
-      setPanel(`
+      document.getElementById("card").innerHTML = `
         <div class="title">Identifica este móvil</div>
         <div class="small">Solo la primera vez en este dispositivo.</div>
-      `);
+      `;
 
-      llamarApi({ api: "getEncarregats" }, function(res) {
+      llamarApi({
+        api: "getEncarregats"
+      }, function(res) {
         if (!res || !res.ok) {
-          mostrarError("Error cargando encargados", res && res.error ? res.error : "");
+          mostrarErrorTexto("Error cargando encargados", res && res.error ? res.error : "");
           return;
         }
 
-        let html = `<div class="title">Identifica este móvil</div>`;
+        const card = document.getElementById("card");
+        card.innerHTML = "";
+
+        const title = document.createElement("div");
+        title.className = "title";
+        title.textContent = "Identifica este móvil";
+        card.appendChild(title);
 
         res.encarregats.forEach(function(e) {
-          html += `<button class="select" onclick="guardarEncargado('${escaparJs(e.id)}','${escaparJs(e.nom)}','${escaparJs(einaInicial)}')">${escaparHtml(e.nom)}</button>`;
+          const btn = document.createElement("button");
+          btn.className = "select";
+          btn.textContent = e.nom;
+          btn.onclick = function() {
+            localStorage.setItem(STORAGE_ENC_KEY, e.id);
+            localStorage.setItem(STORAGE_ALIAS_KEY, "Móvil " + e.nom);
+
+            if (einaInicial) {
+              procesarHerramienta(einaInicial);
+            } else {
+              iniciarPantallaEscaner();
+            }
+          };
+          card.appendChild(btn);
         });
 
-        html += `<div class="small">Después quedará guardado en este móvil.</div>`;
-
-        setPanel(html);
+        const small = document.createElement("div");
+        small.className = "small";
+        small.textContent = "Después quedará guardado en este móvil.";
+        card.appendChild(small);
       });
     }
 
-    function guardarEncargado(idEnc, nomEnc, einaInicial) {
-      localStorage.setItem(STORAGE_ENC_KEY, idEnc);
-      localStorage.setItem(STORAGE_ALIAS_KEY, "Móvil " + nomEnc);
-
-      if (einaInicial) {
-        procesarHerramienta(einaInicial, false);
-      } else {
-        iniciarEscanerContinuo();
-      }
-    }
-
-    function iniciarEscanerContinuo() {
+    function iniciarPantallaEscaner() {
       idEinaActual = "";
       modeloActual = "";
-      procesando = false;
-      lecturaPausada = false;
+      procesandoQR = false;
 
-      setPanel(`<div class="small">Escanea una herramienta.</div>`);
+      document.getElementById("card").innerHTML = `
+        <div class="title">ESCÁNER CONTROL MAQ</div>
+        <div id="reader"></div>
+        <div class="small">Escanea una herramienta.</div>
+      `;
 
-      if (scannerActivo) {
-        try {
-          scanner.resume();
-        } catch (e) {
-          // Si no estaba pausado, no pasa nada.
-        }
-        return;
-      }
+      setTimeout(function() {
+        iniciarCamara();
+      }, 300);
+    }
+
+    function iniciarCamara() {
+      if (escaneando || procesandoQR) return;
 
       scanner = new Html5Qrcode("reader");
+      escaneando = true;
 
       scanner.start(
         { facingMode: "environment" },
@@ -218,12 +229,11 @@
         function(errorMessage) {
           // Silencioso mientras busca QR.
         }
-      ).then(function() {
-        scannerActivo = true;
-        lecturaPausada = false;
-      }).catch(function(err) {
-        scannerActivo = false;
-        mostrarError(
+      ).catch(function(err) {
+        escaneando = false;
+        scanner = null;
+
+        mostrarErrorTexto(
           "No se ha podido abrir la cámara",
           err && err.message ? err.message : err
         );
@@ -231,25 +241,58 @@
     }
 
     function qrDetectado(textoQR) {
-      if (procesando || lecturaPausada) return;
-
-      procesando = true;
-      lecturaPausada = true;
-
-      try {
-        scanner.pause(true);
-      } catch (e) {
-        // Si pause falla, seguimos igualmente.
-      }
+      if (!escaneando || procesandoQR) return;
 
       const idEina = extraerIdEina(textoQR);
 
       if (!idEina) {
-        mostrarError("QR no válido", "No se ha encontrado el código de herramienta.");
         return;
       }
 
-      procesarHerramienta(idEina, true);
+      if (esRepetidoReciente(idEina)) {
+        return;
+      }
+
+      procesandoQR = true;
+      escaneando = false;
+
+      pararCamara(function() {
+        procesarHerramienta(idEina);
+      });
+    }
+
+    function pararCamara(callback) {
+      if (!scanner) {
+        scanner = null;
+        escaneando = false;
+        if (callback) callback();
+        return;
+      }
+
+      try {
+        scanner.stop()
+          .then(function() {
+            try {
+              scanner.clear();
+            } catch (e) {}
+
+            scanner = null;
+            escaneando = false;
+
+            if (callback) callback();
+          })
+          .catch(function() {
+            scanner = null;
+            escaneando = false;
+
+            if (callback) callback();
+          });
+      } catch (e) {
+        scanner = null;
+        escaneando = false;
+
+        if (callback) callback();
+      }
     }
 
     function extraerIdEina(texto) {
@@ -259,9 +302,7 @@
         const url = new URL(texto);
         const eina = url.searchParams.get("eina") || url.searchParams.get("id");
         if (eina) return limpiarId(eina);
-      } catch (e) {
-        // No era URL. Continuamos.
-      }
+      } catch (e) {}
 
       const match = String(texto).match(/[0-9]{3,}/);
       return match ? limpiarId(match[0]) : "";
@@ -273,18 +314,20 @@
       return txt;
     }
 
-    function procesarHerramienta(idEina, vieneDeCamara) {
+    function procesarHerramienta(idEina) {
       idEinaActual = limpiarId(idEina);
       modeloActual = "";
 
-      setPanel(`<div class="small">Comprobando herramienta...</div>`);
+      document.getElementById("card").innerHTML = `
+        <div class="title">Comprobando herramienta...</div>
+      `;
 
       llamarApi({
         api: "getEinaInfo",
         eina: idEinaActual
       }, function(res) {
         if (!res || !res.ok) {
-          mostrarError(
+          mostrarErrorTexto(
             res && res.titol ? res.titol : "Herramienta no encontrada",
             "Escanea otra etiqueta."
           );
@@ -297,15 +340,16 @@
     }
 
     function mostrarConfirmacion() {
-      setPanel(`
-        <div class="small">Herramienta detectada</div>
+      document.getElementById("card").innerHTML = `
+        <div class="title">Herramienta detectada</div>
         <div class="tool">${escaparHtml(modeloActual)}</div>
         <button id="btnConfirmar" onclick="confirmarRegistro()">CONFIRMAR</button>
-      `);
+      `;
     }
 
     function confirmarRegistro() {
       const btn = document.getElementById("btnConfirmar");
+
       if (btn) {
         btn.disabled = true;
         btn.textContent = "REGISTRANDO...";
@@ -325,72 +369,49 @@
         alias: aliasDispositivo
       }, function(res) {
         if (!res || !res.ok) {
-          mostrarError(
+          mostrarErrorTexto(
             res && res.titol ? res.titol : "Error de registro",
             res && res.error ? res.error : ""
           );
           return;
         }
 
-        mostrarRegistrado();
+        marcarUltimoEscaneo(idEinaActual);
+        mostrarRegistradoYReiniciar();
       });
     }
 
-    function mostrarRegistrado() {
-      setPanel(`
+    function mostrarRegistradoYReiniciar() {
+      document.getElementById("card").innerHTML = `
         <div class="title">✓ REGISTRADO</div>
         <div class="tool">${escaparHtml(modeloActual)}</div>
         <div class="small">Preparando siguiente escaneo...</div>
-      `);
+      `;
 
       setTimeout(function() {
-        idEinaActual = "";
-        modeloActual = "";
-        procesando = false;
-        lecturaPausada = false;
-
-        setPanel(`<div class="small">Escanea una herramienta.</div>`);
-
-        if (scannerActivo && scanner) {
-          try {
-            scanner.resume();
-          } catch (e) {
-            scannerActivo = false;
-            iniciarEscanerContinuo();
-          }
-        } else {
-          iniciarEscanerContinuo();
-        }
+        window.location.replace(urlEscanerLimpia());
       }, 900);
     }
 
-    function mostrarError(titulo, detalle) {
-      procesando = false;
-      lecturaPausada = true;
-
-      setPanel(`
+    function mostrarErrorTexto(titulo, detalle) {
+      document.getElementById("card").innerHTML = `
         <div class="title error">✗ ${escaparHtml(titulo)}</div>
         <div class="small">${escaparHtml(detalle || "")}</div>
-        <button onclick="reanudarEscaneo()">ESCANEAR OTRA VEZ</button>
-      `);
+        <button onclick="window.location.replace(urlEscanerLimpia())">ESCANEAR OTRA VEZ</button>
+      `;
     }
 
-    function reanudarEscaneo() {
-      procesando = false;
-      lecturaPausada = false;
+    function marcarUltimoEscaneo(idEina) {
+      localStorage.setItem(STORAGE_LAST_ID_KEY, limpiarId(idEina));
+      localStorage.setItem(STORAGE_LAST_TS_KEY, String(Date.now()));
+    }
 
-      setPanel(`<div class="small">Escanea una herramienta.</div>`);
+    function esRepetidoReciente(idEina) {
+      const lastId = localStorage.getItem(STORAGE_LAST_ID_KEY) || "";
+      const lastTs = Number(localStorage.getItem(STORAGE_LAST_TS_KEY) || "0");
+      const ahora = Date.now();
 
-      if (scannerActivo && scanner) {
-        try {
-          scanner.resume();
-        } catch (e) {
-          scannerActivo = false;
-          iniciarEscanerContinuo();
-        }
-      } else {
-        iniciarEscanerContinuo();
-      }
+      return limpiarId(idEina) === limpiarId(lastId) && (ahora - lastTs) < 4000;
     }
 
     function llamarApi(params, callback) {
@@ -419,7 +440,7 @@
         delete window[callbackName];
         script.remove();
 
-        mostrarError(
+        mostrarErrorTexto(
           "Error conectando con CONTROL MAQ",
           "No se ha podido contactar con Apps Script."
         );
@@ -429,10 +450,6 @@
       document.body.appendChild(script);
     }
 
-    function setPanel(html) {
-      document.getElementById("panel").innerHTML = html;
-    }
-
     function escaparHtml(valor) {
       return String(valor || "")
         .replace(/&/g, "&amp;")
@@ -440,13 +457,6 @@
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#039;");
-    }
-
-    function escaparJs(valor) {
-      return String(valor || "")
-        .replace(/\\/g, "\\\\")
-        .replace(/'/g, "\\'")
-        .replace(/"/g, "&quot;");
     }
   </script>
 </body>
