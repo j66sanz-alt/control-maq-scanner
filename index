@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <title>Escáner CONTROL MAQ</title>
+
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      background: #f5f5f5;
+      padding: 16px;
+      margin: 0;
+    }
+
+    .card {
+      background: white;
+      margin: 24px auto 0 auto;
+      padding: 24px 18px;
+      max-width: 420px;
+      border-radius: 18px;
+      box-shadow: 0 4px 18px rgba(0,0,0,0.15);
+    }
+
+    .title {
+      font-size: 26px;
+      font-weight: bold;
+      margin-bottom: 18px;
+    }
+
+    .tool {
+      font-size: 24px;
+      font-weight: bold;
+      margin: 20px 0 26px 0;
+    }
+
+    .small {
+      font-size: 15px;
+      color: #666;
+      margin-top: 12px;
+    }
+
+    button {
+      width: 100%;
+      padding: 18px;
+      margin: 10px 0;
+      font-size: 22px;
+      border: 0;
+      border-radius: 12px;
+      background: #0b7a28;
+      color: white;
+      font-weight: bold;
+    }
+
+    .select {
+      background: #222;
+      font-size: 20px;
+    }
+
+    .secondary {
+      background: #555;
+      font-size: 18px;
+    }
+
+    .error {
+      color: #b00020;
+      font-weight: bold;
+    }
+
+    #reader {
+      width: 100%;
+      max-width: 360px;
+      margin: 0 auto;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="card" id="card">
+    <div class="title">Cargando...</div>
+  </div>
+
+  <script>
+    const API_URL = "https://script.google.com/macros/s/AKfycbwisapdk1AeW6U9bezPfwqyNjnvSHO9MZx6quE0DrebCw3dbwX0ND2hcaoonemnjejp/exec";
+
+    const STORAGE_ENC_KEY = "id_encarregat_eines_qr";
+    const STORAGE_TOKEN_KEY = "token_dispositiu_eines_qr";
+    const STORAGE_ALIAS_KEY = "alias_dispositiu_eines_qr";
+
+    let scanner = null;
+    let escaneando = false;
+
+    let idEinaActual = "";
+    let modeloActual = "";
+
+    window.onload = function () {
+      asegurarTokenDispositivo();
+
+      const idEnc = localStorage.getItem(STORAGE_ENC_KEY);
+      const einaInicial = obtenerEinaInicial();
+
+      if (!idEnc) {
+        mostrarSeleccionEncargado(einaInicial);
+        return;
+      }
+
+      if (einaInicial) {
+        procesarHerramienta(einaInicial);
+      } else {
+        iniciarPantallaEscaner();
+      }
+    };
+
+    function obtenerEinaInicial() {
+      const params = new URLSearchParams(window.location.search);
+      const valor = params.get("eina") || params.get("id") || "";
+      return limpiarId(valor);
+    }
+
+    function asegurarTokenDispositivo() {
+      let token = localStorage.getItem(STORAGE_TOKEN_KEY);
+
+      if (!token) {
+        token = generarTokenDispositivo();
+        localStorage.setItem(STORAGE_TOKEN_KEY, token);
+      }
+
+      return token;
+    }
+
+    function generarTokenDispositivo() {
+      if (window.crypto && window.crypto.randomUUID) {
+        return "MOB-" + window.crypto.randomUUID();
+      }
+
+      return "MOB-" +
+        Date.now().toString(36) + "-" +
+        Math.random().toString(36).substring(2, 12);
+    }
+
+    function mostrarSeleccionEncargado(einaInicial) {
+      document.getElementById("card").innerHTML = `
+        <div class="title">Identifica este móvil</div>
+        <div class="small">Solo la primera vez en este dispositivo.</div>
+      `;
+
+      llamarApi({
+        api: "getEncarregats"
+      }, function(res) {
+        if (!res || !res.ok) {
+          mostrarErrorTexto("Error cargando encargados", res && res.error ? res.error : "");
+          return;
+        }
+
+        const card = document.getElementById("card");
+        card.innerHTML = "";
+
+        const title = document.createElement("div");
+        title.className = "title";
+        title.textContent = "Identifica este móvil";
+        card.appendChild(title);
+
+        res.encarregats.forEach(function(e) {
+          const btn = document.createElement("button");
+          btn.className = "select";
+          btn.textContent = e.nom;
+          btn.onclick = function() {
+            localStorage.setItem(STORAGE_ENC_KEY, e.id);
+            localStorage.setItem(STORAGE_ALIAS_KEY, "Móvil " + e.nom);
+
+            if (einaInicial) {
+              procesarHerramienta(einaInicial);
+            } else {
+              iniciarPantallaEscaner();
+            }
+          };
+          card.appendChild(btn);
+        });
+
+        const small = document.createElement("div");
+        small.className = "small";
+        small.textContent = "Después quedará guardado en este móvil.";
+        card.appendChild(small);
+      });
+    }
+
+    function iniciarPantallaEscaner() {
+      document.getElementById("card").innerHTML = `
+        <div class="title">ESCÁNER CONTROL MAQ</div>
+        <div id="reader"></div>
+        <div class="small">Escanea una herramienta.</div>
+      `;
+
+      iniciarCamara();
+    }
+
+    function iniciarCamara() {
+      if (escaneando) return;
+
+      scanner = new Html5Qrcode("reader");
+      escaneando = true;
+
+      scanner.start(
+        { facingMode: "environment" },
+        {
+          fps: 10,
+          qrbox: { width: 250, height: 250 }
+        },
+        function(decodedText) {
+          qrDetectado(decodedText);
+        },
+        function(errorMessage) {
+          // Silencioso mientras busca QR.
+        }
+      ).catch(function(err) {
+        escaneando = false;
+        mostrarErrorTexto("No se ha podido abrir la cámara", err && err.message ? err.message : err);
+      });
+    }
+
+    function qrDetectado(textoQR) {
+      if (!escaneando) return;
+
+      escaneando = false;
+
+      scanner.stop().then(function() {
+        const idEina = extraerIdEina(textoQR);
+
+        if (!idEina) {
+          mostrarErrorTexto("QR no válido", "No se ha encontrado el código de herramienta.");
+          return;
+        }
+
+        procesarHerramienta(idEina);
+      }).catch(function(err) {
+        mostrarErrorTexto("Error deteniendo el escáner", err && err.message ? err.message : err);
+      });
+    }
+
+    function extraerIdEina(texto) {
+      if (!texto) return "";
+
+      try {
+        const url = new URL(texto);
+        const eina = url.searchParams.get("eina") || url.searchParams.get("id");
+        if (eina) return limpiarId(eina);
+      } catch (e) {
+        // No era URL. Continuamos.
+      }
+
+      const match = String(texto).match(/[0-9]{3,}/);
+      return match ? limpiarId(match[0]) : "";
+    }
+
+    function limpiarId(valor) {
+      let txt = String(valor || "").trim();
+      if (txt.endsWith(".0")) txt = txt.slice(0, -2);
+      return txt;
+    }
+
+    function procesarHerramienta(idEina) {
+      idEinaActual = limpiarId(idEina);
+      modeloActual = "";
+
+      document.getElementById("card").innerHTML = `
+        <div class="title">Comprobando herramienta...</div>
+      `;
+
+      llamarApi({
+        api: "getEinaInfo",
+        eina: idEinaActual
+      }, function(res) {
+        if (!res || !res.ok) {
+          mostrarErrorTexto(
+            res && res.titol ? res.titol : "Herramienta no encontrada",
+            "Escanea otra etiqueta."
+          );
+          return;
+        }
+
+        modeloActual = res.model || "";
+        mostrarConfirmacion();
+      });
+    }
+
+    function mostrarConfirmacion() {
+      document.getElementById("card").innerHTML = `
+        <div class="title">Herramienta detectada</div>
+        <div class="tool">${modeloActual}</div>
+        <button id="btnConfirmar" onclick="confirmarRegistro()">CONFIRMAR</button>
+      `;
+    }
+
+    function confirmarRegistro() {
+      const btn = document.getElementById("btnConfirmar");
+      btn.disabled = true;
+      btn.textContent = "REGISTRANDO...";
+
+      const idEnc = localStorage.getItem(STORAGE_ENC_KEY);
+      const tokenDispositivo = asegurarTokenDispositivo();
+      const aliasDispositivo =
+        localStorage.getItem(STORAGE_ALIAS_KEY) ||
+        ("Móvil " + idEnc);
+
+      llamarApi({
+        api: "registrarEscaneig",
+        eina: idEinaActual,
+        encarregat: idEnc,
+        token: tokenDispositivo,
+        alias: aliasDispositivo
+      }, function(res) {
+        if (!res || !res.ok) {
+          mostrarErrorTexto(
+            res && res.titol ? res.titol : "Error de registro",
+            res && res.error ? res.error : ""
+          );
+          return;
+        }
+
+        mostrarRegistrado();
+      });
+    }
+
+    function mostrarRegistrado() {
+      document.getElementById("card").innerHTML = `
+        <div class="title">✓ REGISTRADO</div>
+        <div class="tool">${modeloActual}</div>
+        <div class="small">Preparando siguiente escaneo...</div>
+      `;
+
+      setTimeout(function() {
+        idEinaActual = "";
+        modeloActual = "";
+        iniciarPantallaEscaner();
+      }, 900);
+    }
+
+    function mostrarErrorTexto(titulo, detalle) {
+      document.getElementById("card").innerHTML = `
+        <div class="title error">✗ ${titulo}</div>
+        <div class="small">${detalle || ""}</div>
+        <button onclick="iniciarPantallaEscaner()">ESCANEAR OTRA VEZ</button>
+      `;
+    }
+
+    function llamarApi(params, callback) {
+      const callbackName = "cb_" + Date.now() + "_" + Math.floor(Math.random() * 1000000);
+
+      params.callback = callbackName;
+
+      const query = Object.keys(params)
+        .map(function(k) {
+          return encodeURIComponent(k) + "=" + encodeURIComponent(params[k]);
+        })
+        .join("&");
+
+      const script = document.createElement("script");
+
+      window[callbackName] = function(data) {
+        try {
+          callback(data);
+        } finally {
+          delete window[callbackName];
+          script.remove();
+        }
+      };
+
+      script.onerror = function() {
+        delete window[callbackName];
+        script.remove();
+        mostrarErrorTexto("Error conectando con CONTROL MAQ", "No se ha podido contactar con Apps Script.");
+      };
+
+      script.src = API_URL + "?" + query;
+      document.body.appendChild(script);
+    }
+  </script>
+</body>
+</html>
