@@ -1,462 +1,522 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-
-  <title>Escáner CONTROL MAQ</title>
-
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>ESCANER CONTROL MAQ</title>
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-
   <style>
+    :root {
+      --bg: #111827;
+      --panel: #ffffff;
+      --text: #111827;
+      --muted: #6b7280;
+      --line: #d1d5db;
+      --primary: #166534;
+      --primary-dark: #14532d;
+      --danger: #b91c1c;
+      --warn: #92400e;
+    }
+
+    * { box-sizing: border-box; }
+
     body {
-      font-family: Arial, sans-serif;
-      text-align: center;
-      background: #f5f5f5;
-      padding: 16px;
       margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Arial, Helvetica, sans-serif;
+    }
+
+    .wrap {
+      width: 100%;
+      max-width: 480px;
+      margin: 0 auto;
+      padding: 14px;
     }
 
     .card {
-      background: white;
-      margin: 24px auto 0 auto;
-      padding: 24px 18px;
-      max-width: 420px;
-      border-radius: 18px;
-      box-shadow: 0 4px 18px rgba(0,0,0,0.15);
+      background: var(--panel);
+      border-radius: 10px;
+      padding: 18px;
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.25);
     }
 
-    .title {
-      font-size: 26px;
-      font-weight: bold;
-      margin-bottom: 18px;
+    h1 {
+      margin: 0 0 14px;
+      font-size: 24px;
+      line-height: 1.15;
+      text-align: center;
+    }
+
+    .status {
+      margin: 10px 0 0;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.35;
+      text-align: center;
     }
 
     .tool {
-      font-size: 24px;
-      font-weight: bold;
-      margin: 20px 0 26px 0;
+      margin: 16px 0;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #f9fafb;
+      text-align: left;
     }
 
-    .small {
+    .tool-id {
+      color: var(--muted);
+      font-size: 14px;
+      margin-bottom: 6px;
+    }
+
+    .tool-model {
+      font-size: 23px;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+
+    .tool-desc {
+      margin-top: 8px;
+      color: #374151;
       font-size: 15px;
-      color: #666;
-      margin-top: 12px;
+      line-height: 1.35;
     }
 
-    button {
+    button, select, input {
       width: 100%;
-      padding: 18px;
-      margin: 10px 0;
-      font-size: 22px;
-      border: 0;
-      border-radius: 12px;
-      background: #0b7a28;
-      color: white;
-      font-weight: bold;
-    }
-
-    .select {
-      background: #222;
-      font-size: 20px;
-    }
-
-    .secondary {
-      background: #555;
+      min-height: 52px;
+      border-radius: 8px;
       font-size: 18px;
     }
 
-    .error {
-      color: #b00020;
-      font-weight: bold;
+    button {
+      border: 0;
+      background: var(--primary);
+      color: white;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    button:active { background: var(--primary-dark); }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    .secondary { background: #374151; }
+    .danger { background: var(--danger); }
+
+    select, input {
+      margin: 8px 0;
+      border: 1px solid var(--line);
+      padding: 0 12px;
+      background: white;
+      color: var(--text);
+    }
+
+    label {
+      display: block;
+      margin-top: 12px;
+      color: #374151;
+      font-size: 14px;
+      font-weight: 700;
+      text-align: left;
     }
 
     #reader {
       width: 100%;
-      max-width: 360px;
-      margin: 0 auto;
+      margin: 12px auto 0;
+      overflow: hidden;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: #000;
     }
+
+    .hidden { display: none; }
+    .error { color: var(--danger); font-weight: 700; }
+    .warn { color: var(--warn); font-weight: 700; }
   </style>
 </head>
-
 <body>
-  <div class="card" id="card">
-    <div class="title">Cargando...</div>
-  </div>
+  <main class="wrap">
+    <section class="card" id="app">
+      <h1>ESCANER CONTROL MAQ</h1>
+      <p class="status">Cargando...</p>
+    </section>
+  </main>
 
   <script>
     const API_URL = "https://script.google.com/macros/s/AKfycbwisapdk1AeW6U9bezPfwqyNjnvSHO9MZx6quE0DrebCw3dbwX0ND2hcaoonemnjejp/exec";
 
-    const STORAGE_ENC_KEY = "id_encarregat_eines_qr";
-    const STORAGE_TOKEN_KEY = "token_dispositiu_eines_qr";
-    const STORAGE_ALIAS_KEY = "alias_dispositiu_eines_qr";
-    const STORAGE_LAST_ID_KEY = "ultimo_id_eina_control_maq";
-    const STORAGE_LAST_TS_KEY = "ultimo_ts_control_maq";
-
-    let scanner = null;
-    let escaneando = false;
-    let procesandoQR = false;
-
-    let idEinaActual = "";
-    let modeloActual = "";
-
-    window.onload = function () {
-      asegurarTokenDispositivo();
-
-      const idEnc = localStorage.getItem(STORAGE_ENC_KEY);
-      const einaInicial = obtenerEinaInicial();
-
-      if (!idEnc) {
-        mostrarSeleccionEncargado(einaInicial);
-        return;
-      }
-
-      if (einaInicial) {
-        procesarHerramienta(einaInicial);
-      } else {
-        iniciarPantallaEscaner();
-      }
+    const STORAGE = {
+      token: "control_maq_token_dispositivo",
+      encargado: "control_maq_id_encargado",
+      alias: "control_maq_alias_dispositivo",
+      lastId: "control_maq_last_id",
+      lastTs: "control_maq_last_ts"
     };
 
-    function obtenerEinaInicial() {
+    let html5Qr = null;
+    let scannerState = "stopped";
+    let currentTool = null;
+    let encargadosCache = [];
+
+    window.addEventListener("load", boot);
+
+    function boot() {
+      ensureDeviceToken();
+      const initialId = getInitialToolId();
+
+      if (!getEncargado()) {
+        showIdentity(initialId);
+        return;
+      }
+
+      if (initialId) {
+        loadTool(initialId);
+        return;
+      }
+
+      showScannerStart();
+    }
+
+    function getInitialToolId() {
       const params = new URLSearchParams(window.location.search);
-      const valor = params.get("eina") || params.get("id") || "";
-      return limpiarId(valor);
+      return cleanId(params.get("eina") || params.get("id") || "");
     }
 
-    function urlEscanerLimpia() {
-      return window.location.origin + window.location.pathname + "?scan=" + Date.now();
-    }
+    function showIdentity(nextToolId) {
+      render(`
+        <h1>Identifica este movil</h1>
+        <p class="status">Selecciona quien usa este dispositivo.</p>
+        <label for="encargado">Encargado</label>
+        <select id="encargado" disabled>
+          <option>Cargando...</option>
+        </select>
+        <label for="alias">Nombre del movil</label>
+        <input id="alias" autocomplete="off" value="Movil CONTROL MAQ">
+        <button id="saveIdentity" disabled>GUARDAR</button>
+      `);
 
-    function asegurarTokenDispositivo() {
-      let token = localStorage.getItem(STORAGE_TOKEN_KEY);
-
-      if (!token) {
-        token = generarTokenDispositivo();
-        localStorage.setItem(STORAGE_TOKEN_KEY, token);
-      }
-
-      return token;
-    }
-
-    function generarTokenDispositivo() {
-      if (window.crypto && window.crypto.randomUUID) {
-        return "MOB-" + window.crypto.randomUUID();
-      }
-
-      return "MOB-" +
-        Date.now().toString(36) + "-" +
-        Math.random().toString(36).substring(2, 12);
-    }
-
-    function mostrarSeleccionEncargado(einaInicial) {
-      document.getElementById("card").innerHTML = `
-        <div class="title">Identifica este móvil</div>
-        <div class="small">Solo la primera vez en este dispositivo.</div>
-      `;
-
-      llamarApi({
-        api: "getEncarregats"
-      }, function(res) {
-        if (!res || !res.ok) {
-          mostrarErrorTexto("Error cargando encargados", res && res.error ? res.error : "");
+      api({ api: "getEncarregats" }, function (res) {
+        if (!res || !res.ok || !Array.isArray(res.encarregats) || !res.encarregats.length) {
+          showError("No se han podido cargar encargados", res && res.error ? res.error : "");
           return;
         }
 
-        const card = document.getElementById("card");
-        card.innerHTML = "";
+        encargadosCache = res.encarregats;
+        const select = document.getElementById("encargado");
+        select.innerHTML = encargadosCache.map(function (e) {
+          return `<option value="${escapeAttr(e.id)}">${escapeHtml(e.nom)}</option>`;
+        }).join("");
+        select.disabled = false;
 
-        const title = document.createElement("div");
-        title.className = "title";
-        title.textContent = "Identifica este móvil";
-        card.appendChild(title);
+        const btn = document.getElementById("saveIdentity");
+        btn.disabled = false;
+        btn.onclick = function () {
+          const id = select.value;
+          const alias = document.getElementById("alias").value.trim() || ("Movil " + id);
+          localStorage.setItem(STORAGE.encargado, id);
+          localStorage.setItem(STORAGE.alias, alias);
 
-        res.encarregats.forEach(function(e) {
-          const btn = document.createElement("button");
-          btn.className = "select";
-          btn.textContent = e.nom;
-          btn.onclick = function() {
-            localStorage.setItem(STORAGE_ENC_KEY, e.id);
-            localStorage.setItem(STORAGE_ALIAS_KEY, "Móvil " + e.nom);
-
-            if (einaInicial) {
-              procesarHerramienta(einaInicial);
-            } else {
-              iniciarPantallaEscaner();
-            }
-          };
-          card.appendChild(btn);
-        });
-
-        const small = document.createElement("div");
-        small.className = "small";
-        small.textContent = "Después quedará guardado en este móvil.";
-        card.appendChild(small);
+          if (nextToolId) loadTool(nextToolId);
+          else showScannerStart();
+        };
       });
     }
 
-    function iniciarPantallaEscaner() {
-      idEinaActual = "";
-      modeloActual = "";
-      procesandoQR = false;
+    function showScannerStart(message) {
+      currentTool = null;
+      clearUrl();
+      render(`
+        <h1>ESCANER CONTROL MAQ</h1>
+        <p class="status">${escapeHtml(message || "Escanea una herramienta.")}</p>
+        <button id="startScan">INICIAR ESCANER</button>
+      `);
+      document.getElementById("startScan").onclick = startScanner;
+    }
 
-      document.getElementById("card").innerHTML = `
-        <div class="title">ESCÁNER CONTROL MAQ</div>
+    function startScanner() {
+      currentTool = null;
+      render(`
+        <h1>ESCANER CONTROL MAQ</h1>
         <div id="reader"></div>
-        <div class="small">Escanea una herramienta.</div>
-      `;
+        <p class="status">Apunta la camara al QR de una herramienta.</p>
+      `);
 
-      setTimeout(function() {
-        iniciarCamara();
-      }, 300);
-    }
+      if (!window.Html5Qrcode) {
+        showError("No se ha cargado el lector QR", "Revisa la conexion del movil.");
+        return;
+      }
 
-    function iniciarCamara() {
-      if (escaneando || procesandoQR) return;
+      html5Qr = new Html5Qrcode("reader");
+      scannerState = "starting";
 
-      scanner = new Html5Qrcode("reader");
-      escaneando = true;
-
-      scanner.start(
+      html5Qr.start(
         { facingMode: "environment" },
-        {
-          fps: 10,
-          qrbox: { width: 250, height: 250 }
-        },
-        function(decodedText) {
-          qrDetectado(decodedText);
-        },
-        function(errorMessage) {
-          // Silencioso mientras busca QR.
-        }
-      ).catch(function(err) {
-        escaneando = false;
-        scanner = null;
-
-        mostrarErrorTexto(
-          "No se ha podido abrir la cámara",
-          err && err.message ? err.message : err
-        );
+        { fps: 10, qrbox: { width: 250, height: 250 } },
+        onQrDecoded,
+        function () {}
+      ).then(function () {
+        scannerState = "running";
+      }).catch(function (err) {
+        scannerState = "stopped";
+        html5Qr = null;
+        showCameraError(err);
       });
     }
 
-    function qrDetectado(textoQR) {
-      if (!escaneando || procesandoQR) return;
+    function onQrDecoded(decodedText) {
+      if (scannerState !== "running") return;
 
-      const idEina = extraerIdEina(textoQR);
+      const id = extractToolId(decodedText);
+      if (!id || isRecentDuplicate(id)) return;
 
-      if (!idEina) {
-        return;
-      }
-
-      if (esRepetidoReciente(idEina)) {
-        return;
-      }
-
-      procesandoQR = true;
-      escaneando = false;
-
-      pararCamara(function() {
-        procesarHerramienta(idEina);
+      scannerState = "processing";
+      stopScanner(function () {
+        loadTool(id);
       });
     }
 
-    function pararCamara(callback) {
-      if (!scanner) {
-        scanner = null;
-        escaneando = false;
-        if (callback) callback();
+    function loadTool(id) {
+      const clean = cleanId(id);
+      if (!clean) {
+        showScannerStart("QR sin identificador de herramienta.");
         return;
       }
 
-      try {
-        scanner.stop()
-          .then(function() {
-            try {
-              scanner.clear();
-            } catch (e) {}
+      render(`
+        <h1>Herramienta detectada</h1>
+        <p class="status">Consultando datos...</p>
+      `);
 
-            scanner = null;
-            escaneando = false;
-
-            if (callback) callback();
-          })
-          .catch(function() {
-            scanner = null;
-            escaneando = false;
-
-            if (callback) callback();
-          });
-      } catch (e) {
-        scanner = null;
-        escaneando = false;
-
-        if (callback) callback();
-      }
-    }
-
-    function extraerIdEina(texto) {
-      if (!texto) return "";
-
-      try {
-        const url = new URL(texto);
-        const eina = url.searchParams.get("eina") || url.searchParams.get("id");
-        if (eina) return limpiarId(eina);
-      } catch (e) {}
-
-      const match = String(texto).match(/[0-9]{3,}/);
-      return match ? limpiarId(match[0]) : "";
-    }
-
-    function limpiarId(valor) {
-      let txt = String(valor || "").trim();
-      if (txt.endsWith(".0")) txt = txt.slice(0, -2);
-      return txt;
-    }
-
-    function procesarHerramienta(idEina) {
-      idEinaActual = limpiarId(idEina);
-      modeloActual = "";
-
-      document.getElementById("card").innerHTML = `
-        <div class="title">Comprobando herramienta...</div>
-      `;
-
-      llamarApi({
-        api: "getEinaInfo",
-        eina: idEinaActual
-      }, function(res) {
+      api({ api: "getEinaInfo", eina: clean }, function (res) {
         if (!res || !res.ok) {
-          mostrarErrorTexto(
+          showError(
             res && res.titol ? res.titol : "Herramienta no encontrada",
-            "Escanea otra etiqueta."
+            "ID: " + clean
           );
           return;
         }
 
-        modeloActual = res.model || "";
-        mostrarConfirmacion();
+        currentTool = res;
+        showConfirm();
       });
     }
 
-    function mostrarConfirmacion() {
-      document.getElementById("card").innerHTML = `
-        <div class="title">Herramienta detectada</div>
-        <div class="tool">${escaparHtml(modeloActual)}</div>
-        <button id="btnConfirmar" onclick="confirmarRegistro()">CONFIRMAR</button>
-      `;
+    function showConfirm() {
+      render(`
+        <h1>Herramienta detectada</h1>
+        <div class="tool">
+          <div class="tool-id">ID ${escapeHtml(currentTool.id_eina)}</div>
+          <div class="tool-model">${escapeHtml(currentTool.model || "Sin modelo")}</div>
+          <div class="tool-desc">${escapeHtml(currentTool.descripcion || "")}</div>
+        </div>
+        <button id="confirm">CONFIRMAR</button>
+        <button class="secondary" id="cancel">CANCELAR</button>
+      `);
+
+      document.getElementById("confirm").onclick = confirmTool;
+      document.getElementById("cancel").onclick = resumeOrStartScanner;
     }
 
-    function confirmarRegistro() {
-      const btn = document.getElementById("btnConfirmar");
+    function confirmTool() {
+      if (!currentTool) return;
 
-      if (btn) {
-        btn.disabled = true;
-        btn.textContent = "REGISTRANDO...";
+      const btn = document.getElementById("confirm");
+      btn.disabled = true;
+      btn.textContent = "REGISTRANDO...";
+
+      api({
+        api: "registrarEscaneig",
+        eina: currentTool.id_eina,
+        encarregat: getEncargado(),
+        token: ensureDeviceToken(),
+        alias: getAlias()
+      }, function (res) {
+        if (!res || !res.ok) {
+          showError(res && res.titol ? res.titol : "Error de registro", res && res.error ? res.error : "");
+          return;
+        }
+
+        markRecent(currentTool.id_eina);
+        showRegistered();
+      });
+    }
+
+    function showRegistered() {
+      const model = currentTool && currentTool.model ? currentTool.model : "";
+      render(`
+        <h1>REGISTRADO</h1>
+        <div class="tool">
+          <div class="tool-model">${escapeHtml(model)}</div>
+        </div>
+        <p class="status">Preparando siguiente escaneo...</p>
+        <button id="scanAgain">ESCANEAR OTRA VEZ</button>
+      `);
+
+      document.getElementById("scanAgain").onclick = resumeOrStartScanner;
+
+      setTimeout(function () {
+        resumeOrStartScanner(true);
+      }, 600);
+    }
+
+    function resumeOrStartScanner(silent) {
+      currentTool = null;
+      clearUrl();
+
+      if (silent === true) {
+        startScanner();
+        return;
       }
 
-      const idEnc = localStorage.getItem(STORAGE_ENC_KEY);
-      const tokenDispositivo = asegurarTokenDispositivo();
-      const aliasDispositivo =
-        localStorage.getItem(STORAGE_ALIAS_KEY) ||
-        ("Móvil " + idEnc);
+      showScannerStart();
+    }
 
-      llamarApi({
-        api: "registrarEscaneig",
-        eina: idEinaActual,
-        encarregat: idEnc,
-        token: tokenDispositivo,
-        alias: aliasDispositivo
-      }, function(res) {
-        if (!res || !res.ok) {
-          mostrarErrorTexto(
-            res && res.titol ? res.titol : "Error de registro",
-            res && res.error ? res.error : ""
-          );
-          return;
-        }
+    function stopScanner(callback) {
+      const scanner = html5Qr;
+      html5Qr = null;
 
-        marcarUltimoEscaneo(idEinaActual);
-        mostrarRegistradoYReiniciar();
+      if (!scanner) {
+        scannerState = "stopped";
+        if (callback) callback();
+        return;
+      }
+
+      scanner.stop().then(function () {
+        try {
+          scanner.clear();
+        } catch (err) {}
+        scannerState = "stopped";
+        if (callback) callback();
+      }).catch(function () {
+        scannerState = "stopped";
+        if (callback) callback();
       });
     }
 
-    function mostrarRegistradoYReiniciar() {
-      document.getElementById("card").innerHTML = `
-        <div class="title">✓ REGISTRADO</div>
-        <div class="tool">${escaparHtml(modeloActual)}</div>
-        <div class="small">Preparando siguiente escaneo...</div>
-      `;
-
-      setTimeout(function() {
-        window.location.replace(urlEscanerLimpia());
-      }, 900);
+    function showCameraError(err) {
+      const detail = err && err.message ? err.message : String(err || "");
+      render(`
+        <h1 class="error">No se ha podido abrir la camara</h1>
+        <p class="status">${escapeHtml(detail)}</p>
+        <button id="retry">ESCANEAR OTRA VEZ</button>
+      `);
+      document.getElementById("retry").onclick = startScanner;
     }
 
-    function mostrarErrorTexto(titulo, detalle) {
-      document.getElementById("card").innerHTML = `
-        <div class="title error">✗ ${escaparHtml(titulo)}</div>
-        <div class="small">${escaparHtml(detalle || "")}</div>
-        <button onclick="window.location.replace(urlEscanerLimpia())">ESCANEAR OTRA VEZ</button>
-      `;
+    function showError(title, detail) {
+      render(`
+        <h1 class="error">${escapeHtml(title)}</h1>
+        <p class="status">${escapeHtml(detail || "")}</p>
+        <button id="again">ESCANEAR OTRA VEZ</button>
+      `);
+      document.getElementById("again").onclick = showScannerStart;
     }
 
-    function marcarUltimoEscaneo(idEina) {
-      localStorage.setItem(STORAGE_LAST_ID_KEY, limpiarId(idEina));
-      localStorage.setItem(STORAGE_LAST_TS_KEY, String(Date.now()));
-    }
+    function api(params, callback) {
+      const cbName = "controlMaqCb_" + Date.now() + "_" + Math.floor(Math.random() * 1000000);
+      params.callback = cbName;
 
-    function esRepetidoReciente(idEina) {
-      const lastId = localStorage.getItem(STORAGE_LAST_ID_KEY) || "";
-      const lastTs = Number(localStorage.getItem(STORAGE_LAST_TS_KEY) || "0");
-      const ahora = Date.now();
-
-      return limpiarId(idEina) === limpiarId(lastId) && (ahora - lastTs) < 4000;
-    }
-
-    function llamarApi(params, callback) {
-      const callbackName = "cb_" + Date.now() + "_" + Math.floor(Math.random() * 1000000);
-
-      params.callback = callbackName;
-
-      const query = Object.keys(params)
-        .map(function(k) {
-          return encodeURIComponent(k) + "=" + encodeURIComponent(params[k]);
-        })
-        .join("&");
+      const query = Object.keys(params).map(function (key) {
+        return encodeURIComponent(key) + "=" + encodeURIComponent(params[key]);
+      }).join("&");
 
       const script = document.createElement("script");
+      const timeout = setTimeout(function () {
+        cleanup();
+        showError("Error conectando con CONTROL MAQ", "Tiempo de espera agotado.");
+      }, 15000);
 
-      window[callbackName] = function(data) {
-        try {
-          callback(data);
-        } finally {
-          delete window[callbackName];
-          script.remove();
-        }
+      function cleanup() {
+        clearTimeout(timeout);
+        delete window[cbName];
+        if (script.parentNode) script.parentNode.removeChild(script);
+      }
+
+      window[cbName] = function (data) {
+        cleanup();
+        callback(data);
       };
 
-      script.onerror = function() {
-        delete window[callbackName];
-        script.remove();
-
-        mostrarErrorTexto(
-          "Error conectando con CONTROL MAQ",
-          "No se ha podido contactar con Apps Script."
-        );
+      script.onerror = function () {
+        cleanup();
+        showError("Error conectando con CONTROL MAQ", "No se ha podido contactar con Apps Script.");
       };
 
       script.src = API_URL + "?" + query;
       document.body.appendChild(script);
     }
 
-    function escaparHtml(valor) {
-      return String(valor || "")
+    function extractToolId(text) {
+      const raw = String(text || "").trim();
+      if (!raw) return "";
+
+      try {
+        const url = new URL(raw);
+        return cleanId(url.searchParams.get("eina") || url.searchParams.get("id") || "");
+      } catch (err) {}
+
+      const match = raw.match(/\d{3,}/);
+      return match ? cleanId(match[0]) : "";
+    }
+
+    function cleanId(value) {
+      let text = String(value || "").trim();
+      if (/^\d+\.0$/.test(text)) text = text.slice(0, -2);
+      return text;
+    }
+
+    function ensureDeviceToken() {
+      let token = localStorage.getItem(STORAGE.token);
+      if (!token) {
+        token = "MOB-" + (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + "-" + Math.random().toString(36).slice(2));
+        localStorage.setItem(STORAGE.token, token);
+      }
+      return token;
+    }
+
+    function getEncargado() {
+      return localStorage.getItem(STORAGE.encargado) || "";
+    }
+
+    function getAlias() {
+      return localStorage.getItem(STORAGE.alias) || ("Movil " + getEncargado());
+    }
+
+    function markRecent(id) {
+      localStorage.setItem(STORAGE.lastId, cleanId(id));
+      localStorage.setItem(STORAGE.lastTs, String(Date.now()));
+    }
+
+    function isRecentDuplicate(id) {
+      const lastId = cleanId(localStorage.getItem(STORAGE.lastId) || "");
+      const lastTs = Number(localStorage.getItem(STORAGE.lastTs) || "0");
+      return cleanId(id) === lastId && Date.now() - lastTs < 2500;
+    }
+
+    function clearUrl() {
+      if (window.location.search) {
+        history.replaceState(null, "", window.location.pathname);
+      }
+    }
+
+    function render(html) {
+      document.getElementById("app").innerHTML = html;
+    }
+
+    function escapeHtml(value) {
+      return String(value || "")
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#039;");
+    }
+
+    function escapeAttr(value) {
+      return escapeHtml(value).replace(/`/g, "&#096;");
     }
   </script>
 </body>
