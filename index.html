@@ -160,6 +160,8 @@
     let scannerState = "stopped";
     let currentTool = null;
     let encargadosCache = [];
+    // NUEVO: referencia al temporizador de auto-reinicio del escaner
+    let autoRestartTimer = null;
 
     window.addEventListener("load", boot);
 
@@ -225,7 +227,16 @@
       });
     }
 
+    // NUEVO: cancela cualquier auto-reinicio pendiente del escaner
+    function clearAutoRestart() {
+      if (autoRestartTimer) {
+        clearTimeout(autoRestartTimer);
+        autoRestartTimer = null;
+      }
+    }
+
     function showScannerStart(message) {
+      clearAutoRestart();
       currentTool = null;
       clearUrl();
       render(`
@@ -237,6 +248,14 @@
     }
 
     function startScanner() {
+      // NUEVO: cancela cualquier reinicio automatico pendiente antes de arrancar
+      clearAutoRestart();
+
+      // NUEVO: evita arrancar dos escaneres a la vez (causa del bloqueo de camara)
+      if (scannerState === "starting" || scannerState === "running") {
+        return;
+      }
+
       currentTool = null;
       render(`
         <h1>ESCANER CONTROL MAQ</h1>
@@ -279,6 +298,7 @@
     }
 
     function loadTool(id) {
+      clearAutoRestart();
       const clean = cleanId(id);
       if (!clean) {
         showScannerStart("QR sin identificador de herramienta.");
@@ -305,6 +325,7 @@
     }
 
     function showConfirm() {
+      clearAutoRestart();
       render(`
         <h1>Herramienta detectada</h1>
         <div class="tool">
@@ -345,6 +366,9 @@
     }
 
     function showRegistered() {
+      // NUEVO: por seguridad, cancela cualquier temporizador previo antes de crear uno nuevo
+      clearAutoRestart();
+
       const model = currentTool && currentTool.model ? currentTool.model : "";
       render(`
         <h1>REGISTRADO</h1>
@@ -355,14 +379,20 @@
         <button id="scanAgain">ESCANEAR OTRA VEZ</button>
       `);
 
-      document.getElementById("scanAgain").onclick = resumeOrStartScanner;
+      // NUEVO: el boton manual cancela el temporizador automatico antes de arrancar
+      document.getElementById("scanAgain").onclick = function () {
+        clearAutoRestart();
+        startScanner();
+      };
 
-      setTimeout(function () {
-        resumeOrStartScanner(true);
-      }, 600);
+      autoRestartTimer = setTimeout(function () {
+        autoRestartTimer = null;
+        startScanner();
+      }, 900); // NUEVO: 900ms en vez de 600ms, mas margen para liberar la camara
     }
 
     function resumeOrStartScanner(silent) {
+      clearAutoRestart();
       currentTool = null;
       clearUrl();
 
@@ -397,6 +427,7 @@
     }
 
     function showCameraError(err) {
+      clearAutoRestart();
       const detail = err && err.message ? err.message : String(err || "");
       render(`
         <h1 class="error">No se ha podido abrir la camara</h1>
@@ -407,6 +438,7 @@
     }
 
     function showError(title, detail) {
+      clearAutoRestart();
       render(`
         <h1 class="error">${escapeHtml(title)}</h1>
         <p class="status">${escapeHtml(detail || "")}</p>
