@@ -98,6 +98,7 @@
       color: white;
       font-weight: 700;
       cursor: pointer;
+      margin-top: 10px;
     }
 
     button:active { background: var(--primary-dark); }
@@ -160,7 +161,6 @@
     let scannerState = "stopped";
     let currentTool = null;
     let encargadosCache = [];
-    // NUEVO: referencia al temporizador de auto-reinicio del escaner
     let autoRestartTimer = null;
 
     window.addEventListener("load", boot);
@@ -227,12 +227,28 @@
       });
     }
 
-    // NUEVO: cancela cualquier auto-reinicio pendiente del escaner
     function clearAutoRestart() {
       if (autoRestartTimer) {
         clearTimeout(autoRestartTimer);
         autoRestartTimer = null;
       }
+    }
+
+    // NUEVO: sale de la aplicacion de forma explicita.
+    // Para la camara si esta activa, cancela cualquier temporizador pendiente
+    // y deja una pantalla clara de que ya no queda nada corriendo en segundo plano.
+    function exitApp() {
+      clearAutoRestart();
+      stopScanner(function () {
+        currentTool = null;
+        clearUrl();
+        render(`
+          <h1>Sesion cerrada</h1>
+          <p class="status">La camara esta apagada. Ya puedes cerrar esta pestana del navegador.</p>
+          <button id="reopen" class="secondary">VOLVER A ABRIR EL ESCANER</button>
+        `);
+        document.getElementById("reopen").onclick = showScannerStart;
+      });
     }
 
     function showScannerStart(message) {
@@ -248,10 +264,8 @@
     }
 
     function startScanner() {
-      // NUEVO: cancela cualquier reinicio automatico pendiente antes de arrancar
       clearAutoRestart();
 
-      // NUEVO: evita arrancar dos escaneres a la vez (causa del bloqueo de camara)
       if (scannerState === "starting" || scannerState === "running") {
         return;
       }
@@ -261,7 +275,11 @@
         <h1>ESCANER CONTROL MAQ</h1>
         <div id="reader"></div>
         <p class="status">Apunta la camara al QR de una herramienta.</p>
+        <button id="exitFromScan" class="secondary">SALIR</button>
       `);
+
+      // NUEVO: boton de salir visible mientras la camara esta activa
+      document.getElementById("exitFromScan").onclick = exitApp;
 
       if (!window.Html5Qrcode) {
         showError("No se ha cargado el lector QR", "Revisa la conexion del movil.");
@@ -334,11 +352,13 @@
           <div class="tool-desc">${escapeHtml(currentTool.descripcion || "")}</div>
         </div>
         <button id="confirm">CONFIRMAR</button>
-        <button class="secondary" id="cancel">CANCELAR</button>
+        <button class="secondary" id="salir">SALIR</button>
       `);
 
       document.getElementById("confirm").onclick = confirmTool;
-      document.getElementById("cancel").onclick = resumeOrStartScanner;
+      // CAMBIO: el antiguo boton "CANCELAR" (que solo volvia al inicio sin utilidad real)
+      // ahora es "SALIR" y cierra la aplicacion de verdad.
+      document.getElementById("salir").onclick = exitApp;
     }
 
     function confirmTool() {
@@ -366,7 +386,6 @@
     }
 
     function showRegistered() {
-      // NUEVO: por seguridad, cancela cualquier temporizador previo antes de crear uno nuevo
       clearAutoRestart();
 
       const model = currentTool && currentTool.model ? currentTool.model : "";
@@ -377,18 +396,22 @@
         </div>
         <p class="status">Preparando siguiente escaneo...</p>
         <button id="scanAgain">ESCANEAR OTRA VEZ</button>
+        <button id="salirRegistrado" class="secondary">SALIR</button>
       `);
 
-      // NUEVO: el boton manual cancela el temporizador automatico antes de arrancar
       document.getElementById("scanAgain").onclick = function () {
         clearAutoRestart();
         startScanner();
       };
 
+      // NUEVO: opcion de salir justo despues de registrar, antes de que
+      // salte el auto-reinicio del escaner
+      document.getElementById("salirRegistrado").onclick = exitApp;
+
       autoRestartTimer = setTimeout(function () {
         autoRestartTimer = null;
         startScanner();
-      }, 900); // NUEVO: 900ms en vez de 600ms, mas margen para liberar la camara
+      }, 900);
     }
 
     function resumeOrStartScanner(silent) {
@@ -433,8 +456,10 @@
         <h1 class="error">No se ha podido abrir la camara</h1>
         <p class="status">${escapeHtml(detail)}</p>
         <button id="retry">ESCANEAR OTRA VEZ</button>
+        <button id="salirError" class="secondary">SALIR</button>
       `);
       document.getElementById("retry").onclick = startScanner;
+      document.getElementById("salirError").onclick = exitApp;
     }
 
     function showError(title, detail) {
@@ -443,8 +468,10 @@
         <h1 class="error">${escapeHtml(title)}</h1>
         <p class="status">${escapeHtml(detail || "")}</p>
         <button id="again">ESCANEAR OTRA VEZ</button>
+        <button id="salirErrorGeneral" class="secondary">SALIR</button>
       `);
       document.getElementById("again").onclick = showScannerStart;
+      document.getElementById("salirErrorGeneral").onclick = exitApp;
     }
 
     function api(params, callback) {
