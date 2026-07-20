@@ -376,6 +376,12 @@
         alias: getAlias()
       }, function (res) {
         if (!res || !res.ok) {
+          if (res && res.error === "ENCARREGAT_NO_TROBAT") {
+            localStorage.removeItem(STORAGE.encargado);
+            localStorage.removeItem(STORAGE.alias);
+            showIdentity(currentTool.id_eina);
+            return;
+          }
           showError(res && res.titol ? res.titol : "Error de registro", res && res.error ? res.error : "");
           return;
         }
